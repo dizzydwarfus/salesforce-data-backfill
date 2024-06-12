@@ -1,44 +1,65 @@
-import pandas as pd
-from dotenv import load_dotenv
+# Built-in Imports
+import sys
 import os
-from access_token import AccessToken
-from data_query import get_data
 
-load_dotenv()
+sys.path.append(os.path.abspath(".."))
+sys.path.append(os.path.abspath("."))
 
-argument_dict = {
-    "url": os.environ.get("PROD_DOMAIN"),
-    "client_id": os.environ.get("PROD_CONSUMER_KEY"),
-    "client_secret": os.environ.get("PROD_CONSUMER_SECRET"),
-    "username": os.environ.get("PROD_USERNAME"),
-    "password": os.environ.get("PROD_PASSWORD"),
-    "security_token": os.environ.get("PROD_SECURITY_TOKEN"),
-}
+# Third-Party Imports
+import pandas as pd
+import requests
 
-payload = {
-    "grant_type": "client_credentials",
-    "client_id": argument_dict.get("client_id"),
-    "client_secret": argument_dict.get("client_secret"),
-}
+# Internal Imports
+from utils.access_token import AccessToken
+from utils._constants import (
+    PAYLOAD,
+    DOMAIN,
+    SALES_MEMBERS_FILE,
+    OUTPUT_FILE_LEAD_MEMBERS,
+    API_VERSION,
+)
 
+from utils.utils import flatten_dictionary
 
-auth = AccessToken(domain=os.getenv("PROD_DOMAIN"), payload=payload)
+# Auth Setup
+auth = AccessToken(domain=DOMAIN, payload=PAYLOAD)
 auth.generate_access_token()
-
-api_version = "60.0"
-api_endpoint = os.getenv("PROD_DOMAIN") + f"/services/data/v{api_version}/query/?q="
-query = "SELECT+LeadId,+Field,+OldValue,+NewValue,+DataType,+CreatedById,+CreatedDate,+Id,+Lead.SDROwner__c,+Lead.SalesOwner__c,+Lead.OwnerId,+Lead.Owner.Name+FROM+LeadHistory+WHERE+(Field='ownerAssignment'+or+Field='Owner')+and+DataType='EntityId'"
 auth_header = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {auth.access_token}",
 }
 
-raw_history = get_data(api_endpoint, query, auth_header)
+# Query Salesforce
+api_endpoint = DOMAIN + f"/services/data/v{API_VERSION}/query/?q="
+query = "SELECT+LeadId,+Field,+OldValue,+NewValue,+DataType,+CreatedById,+CreatedDate,+Id,+Lead.SDROwner__c,+Lead.SalesOwner__c,+Lead.OwnerId,+Lead.Owner.Name+FROM+LeadHistory+WHERE+(Field='ownerAssignment'+or+Field='Owner')+and+DataType='EntityId'"
 
+
+# Get Lead History Data
+def get_lead_data(api_endpoint, query, auth_header) -> pd.DataFrame:
+    response = requests.get(url=api_endpoint + query, headers=auth_header)
+
+    data = response.json()
+
+    raw_history = data["records"]
+
+    for i, record in enumerate(raw_history):
+        del record["attributes"]
+        del record["Lead"]["attributes"]
+        del record["Lead"]["Owner"]["attributes"]
+        raw_history[i] = flatten_dictionary(record)
+
+    raw_history = pd.DataFrame(data["records"])
+    return raw_history
+
+
+raw_history = get_lead_data(api_endpoint, query, auth_header)
+
+# Get Sales Members Data
 sales_members = pd.read_excel(
-    io=os.getenv("SALES_MEMBERS_FILE"),
+    io=SALES_MEMBERS_FILE,
     sheet_name="Sales Members",
 )
+
 
 # Clean raw_history
 raw_history["CreatedDate"] = pd.to_datetime(
@@ -99,8 +120,9 @@ final_output["SDR Owner Name"] = final_output["SDROwner__c"].map(sales_members_d
 final_output["Sales Owner Name"] = final_output["SalesOwner__c"].map(sales_members_dict)
 final_output["Admin Name"] = final_output["Admin"].map(sales_members_dict)
 
-final_output.to_excel(
-    os.getenv("OUTPUT_FILE"),
-    sheet_name="Final Output",
-    index=False,
-)
+with pd.ExcelWriter(
+    path=OUTPUT_FILE_LEAD_MEMBERS,
+    mode="a",
+    if_sheet_exists="replace",
+) as writer:
+    final_output.to_excel(writer, sheet_name="Final Output", index=False)
