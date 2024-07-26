@@ -22,6 +22,11 @@ def flatten_dictionary(dict_to_flatten):
     return flatten_dictionary(new_dict)
 
 
+def format_query(query: str) -> str:
+    query = query.replace("\n", "").replace(" ", "+").strip()
+    return query
+
+
 def get_data(
     domain: str, api_endpoint: str, query: str, auth_header: dict, **kwargs
 ) -> pd.DataFrame:

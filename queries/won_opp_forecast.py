@@ -29,13 +29,13 @@ auth_header = {
 # Salesforce Queries
 api_endpoint = DOMAIN + f"/services/data/v{API_VERSION}/query/?q="
 oppo_query = """SELECT 
-Id, AccountId, Account.Name, Name, StageName, CreatedDate, CloseDate, Amount, OwnerId, Owner.Name, Owner.UserRegion__c, CurrencyIsoCode, Type 
+Id, AccountId, Account.Name, Name, StageName, CreatedDate, CloseDate, Amount, OwnerId, Owner.Name, Owner.UserRegion__c, CurrencyIsoCode, Type, Ramp_up_time_years__c 
 FROM 
 Opportunity 
 WHERE 
 RecordType.Name = 'Main Opportunity' 
 and StageName = 'Closed Won' 
-and CloseDate = THIS_FISCAL_YEAR
+and (CloseDate = THIS_FISCAL_YEAR)
 """
 oppo_query = oppo_query.replace("\n", "").replace(" ", "+").strip()
 
